@@ -1,0 +1,125 @@
+'use strict'
+
+var mongoose = require('mongoose'),
+  Schema = mongoose.Schema;
+
+var QuestionsSchema = new Schema({
+  questionID: {
+    type: String
+  },
+
+  title: {
+    type: String,
+    required: true
+  },
+
+  note: {// Include any  note about question
+    type: String,
+    default: null
+  },
+
+  helpText: { // Any help about question like "Date must be like : 21/04/2017"
+    type: String,
+    default: null
+  },
+
+  questionType: {
+    type: String,// Standard or Sub Question
+  },
+
+  answerType: {
+    type: String, // dropdown, check box, radio button or may be a text
+    //required: true
+  },
+
+  answerChoice: {
+    type: String,// single choice, multiple choice,
+    default: "Single Choice"
+  },
+
+  subQuestions: {
+    type: Array,
+    default: null
+  },
+
+  answers: {
+    type: Array,
+    required: true
+  },
+
+  isPrimary: {
+    type: Boolean,
+    default: false
+  },
+
+  createdAt: {
+    type: Date
+  },
+
+  updatedAt: {
+    type: Date
+  }
+
+});
+
+
+function formatDate(date) {
+  var d = new Date(date),
+    month = '' + (d.getMonth() + 1),
+    day = '' + d.getDate(),
+    year = d.getFullYear();
+
+  if (month.length < 2) month = '0' + month;
+  if (day.length < 2) day = '0' + day;
+
+  return [year, month, day].join('');
+}
+
+QuestionsSchema.pre('save', function (next) {
+  var now = new Date();
+
+  // Date fotmat ex : 20170421 or YYYYMMDD
+  var currentDate = formatDate(now);
+
+
+  this.updateAt = now;
+  if (!this.createdAt) {
+    this.createdAt = now;
+  }
+  var doc = this;
+
+  // Require questions module
+  var Questions = mongoose.model('Questions');
+
+  Questions.findOne({}).sort({ 'createdAt': -1 }).limit(1).exec(function (error, latestQn) {
+    if (error) return next(error);
+
+    var finalDateWithId = "QN" + currentDate;
+    if (latestQn != null && latestQn != undefined && latestQn.questionID != '' && latestQn.questionID != undefined) {
+
+      // Date fotmat ex : 20170421 or YYYYMMDD
+      var lastDate = formatDate(latestQn.createdAt);
+      if (currentDate == lastDate) {
+        var currentUserId = latestQn.questionID.substr(11, 12)
+
+        if (parseInt(currentUserId) < 9) {
+          var increasedCount = parseInt(currentUserId) + 1;
+          currentUserId = '00' + increasedCount; QuestionsSchema
+        } else if (parseInt(currentUserId) < 99) {
+          var increasedCount = parseInt(currentUserId) + 1;
+          currentUserId = '0' + increasedCount;
+        }
+        var currentLastId = currentUserId;
+
+        doc.questionID = finalDateWithId + currentLastId;
+      } else {
+        doc.questionID = finalDateWithId + '001';
+      }
+    } else {
+      doc.questionID = finalDateWithId + '001';
+    }
+    next();
+  });
+});
+
+mongoose.model('Questions', QuestionsSchema);

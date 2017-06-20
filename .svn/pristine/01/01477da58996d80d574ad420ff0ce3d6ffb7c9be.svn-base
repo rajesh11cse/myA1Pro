@@ -1,0 +1,13 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/qualifications.js');
+var Qualifications = mongoose.model('Qualifications');
+var Promise = require('bluebird');
+var fs = require('file-system');
+
+module.exports.getQualifications = function (req, res) {
+	res.status(200).json({});
+}

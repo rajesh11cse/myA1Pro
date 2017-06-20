@@ -1,0 +1,149 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/questions.js');
+var Questions = mongoose.model('Questions');
+var Promise = require('bluebird');
+
+
+// Check if there is no question in database 
+// then create a first question
+Questions.count(function (err, count) {
+	if (count === 0) {
+		createFirstQuestion();
+	}
+
+});
+
+// fuction to create first question
+var createFirstQuestion = function () {
+	var question = new Questions({
+		"title": "This is the last question",
+		"answers": "None",
+	});
+	question.save(function (err, user) {
+		if (err) return console.log(err);
+		else console.log("A question created");
+	});
+}
+
+
+/**
+ * Get questions
+ */
+module.exports.getQuestions = function (req, res) {
+	Questions.find({}).exec(function (err, Qns) {
+		if (err) return res.status(400).json({ result: "Error", message: err });
+		res.status(200).json({ result: "Success", data: Qns });
+	});
+}
+
+
+// Before making a question check if 
+// question is aleady exists in database
+// if yes then reject the promise
+function checkExistanceOfQuestion(req) {
+	return new Promise(function (resolve, reject) {
+		Questions.find({ "title": req.body.title })
+			.exec(function (err, data) {
+				if (err) reject();// reject promise if error occur
+				if (data.length > 0) {
+					reject("Question already exists");
+				} else {
+					resolve(data);
+				}
+			})
+	});
+}
+
+// Making a question
+function makeQuestion(req) {
+	return new Promise(function (resolve, reject) {
+		var questions = new Questions(req.body);
+		//questions.title = req.body.title;
+		//questions.questionType = req.body.title;
+		//questions.note = req.body.;
+		questions.answers = "none"
+		questions.save(function (err, qn) {
+			if (err) {
+				reject("Getting arror while making question");
+			} else {
+				resolve(qn);
+			}
+		});
+	})
+}
+
+// Get first question id to update answers 
+function getFirstQuestionID(req) {
+	return new Promise(function (resolve, reject) {
+		Questions.findOne({}).sort({ 'createdAt': 1 }).limit(1)
+			.exec(function (err, data) {
+				if (err) {
+					reject("Error occured.");
+				} else {
+					resolve(data.questionID);
+				}
+			});
+	})
+}
+
+
+// Update answers of the questions
+// Here have to update answer id and next question
+function updateAnswer(req, qn, qnID) {
+	return new Promise(function (resolve, reject) {
+		var questionID = qnID;
+		// Answer may have following fields
+		var answers = req.body.answers;
+		answers.forEach(function (an, i) {
+			an['answerID'] = qn.questionID + '-AN' + (i + 1);
+			//an['nextQID'] = questionID;// Standard Id for nxtQId, 0 for subQns and 1 for none just select and next
+			an['nextQID'] = 0;
+			an['imageUrl'] = null;
+			an['imageType'] = null;
+		});
+		var query = { $set: { answers } }
+		Questions.findByIdAndUpdate(qn._id, query, function (err, updateQn) {
+			if (err) {
+				reject("Error occured.");
+			} else {
+				resolve(updateQn);
+			}
+		})
+	})
+}
+
+/**
+ * Create questions
+ */
+module.exports.createQuestion = function (req, res) {
+	req.assert('title', 'Title is required and must be a string').notEmpty().isString();
+	req.assert('answers', 'Answer is required and must be an array').notEmpty().isArray();
+
+	var errors = req.validationErrors();
+	if (errors) {
+		res.send(errors[0].msg); return;
+	}
+	var questionDataResult, questionIDResult = null;
+	checkExistanceOfQuestion(req)
+		.then(function (data) {
+			return makeQuestion(req);
+		})
+		.then(function (questionData) {
+			questionDataResult = questionData;
+			return getFirstQuestionID(req);
+		})
+		.then(function (questionId) {
+			questionIDResult = questionId;
+			return updateAnswer(req, questionDataResult, questionIDResult);
+		})
+		.then(function (finalData) {
+			return res.status(200).json({ result: "Success", data: finalData });
+		})
+		.catch(function (err) {
+			return res.status(400).json({ result: "Error", data: err });
+		});
+}

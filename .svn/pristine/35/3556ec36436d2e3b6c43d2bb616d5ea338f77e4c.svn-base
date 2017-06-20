@@ -1,0 +1,215 @@
+'use strict'
+
+// routes.js
+
+// load all the things we need
+var path = require('path'),
+  questions = require('./controllers/questions'),
+  qualifications = require('./controllers/qualifications'),
+  configAuth = require('./config/auth'),
+  users = require('./controllers/users'),
+  jwt = require('jsonwebtoken');
+
+var appRouter = function (app, passport) {
+  // Default API
+  app.get("/", function (req, res) {
+    res.sendFile(path.join(__dirname, '', './UI/index.html'));
+  });
+
+  // ============================= Set up the RESTful API ==================================
+  // API to create question
+  app.route("/api/createQuestion")
+    .post(questions.createQuestion)
+
+  // API to get questions
+  app.route("/api/getQuestions")
+    .get(questions.getQuestions)
+
+  // API to get qulifications
+  app.route("/api/getQualifications")
+    .get(qualifications.getQualifications)
+
+  // Register new users
+  app.route('/api/register')
+    .post(users.userRegistration);
+
+  // Authenticate the user and create a JSON Web Token for future convenince.
+  // User login API (Note : local users only)
+  app.route('/auth/login')
+    .post(function (req, res, next) {
+      passport.authenticate('local-login', function (err, user, info) {
+        if (err) { return next(err); }
+        if (!user) {
+          res.status(400).json({ success: false, message: info.message });
+        }
+        // This function calls passport.serializeUser() automatically.
+        req.logIn(user, function (err) {
+          if (err) {
+            return next(err);
+          } else {
+            // {id : user._id, email : user.email}
+            var token = jwt.sign({ id: user._id, email: user.email }, configAuth.secret, {
+              expiresIn: configAuth.tokenExpiresIn
+            });
+
+            console.log(typeof token)
+            // Verify the token
+
+            // setTimeout(function(){
+            //    jwt.verify(token, configAuth.secret,  function(err, decoded) {
+            //   // error if token is invalid
+            //   if(err){
+            //     console.log(err.name)
+            //     console.log("Token is invalid or expired.")
+            //   }else{
+            //     var date1 =  decoded.exp
+            //     var date2 =  Math.round((new Date()).getTime()/1000);
+
+            //     console.log("====================")
+            //     console.log(date1)
+            //     console.log("=====================")
+            //     console.log((new Date()).getTime())
+            //     console.log("======================")
+            //     console.log(date2)
+            //     if(date1 < date2){
+            //       console.log("expired")
+            //     }
+            //     console.log(decoded)
+            //   }
+            // });
+            // return response with TWT Token
+            res.status(200).json({ success: true, token: 'JWT ' + token });
+            // }, 5000)
+
+          }
+        });
+
+      })(req, res, next);
+    });
+
+
+
+  // =====================================
+  // FACEBOOK ROUTES =====================
+  // =====================================
+  // route for facebook authentication and login
+  app.route('/auth/facebook')
+    .get(passport.authenticate('facebook', { scope: ['email'] }));
+
+  // handle the callback after facebook has authenticated the user
+  app.route('/auth/facebook/callback')
+    .get(function (req, res, next) {
+      passport.authenticate('facebook', function (err, user, info) {
+        if (err) { return next(err); }
+        if (!user) {
+          res.status(400).json({ success: false, message: info.message });
+          return;
+        }
+
+        // This function calls passport.serializeUser() automatically.
+        req.logIn(user, function (err) {
+          if (err) {
+            return next(err);
+          } else {
+            var token = jwt.sign(user, configAuth.secret, {
+              expiresIn: configAuth.tokenExpiresIn
+            });
+            // return response with TWT Token
+            res.status(200).json({ success: true, token: 'JWT ' + token });
+          }
+        });
+      })(req, res, next);
+    });
+
+
+
+
+  // =====================================
+  // GOOGLE ROUTES =====================
+  // =====================================
+
+  // GET /auth/google
+  //   Use passport.authenticate() as route middleware to authenticate the
+  //   request.  The first step in Google authentication will involve redirecting
+  //   the user to google.com.  After authorization, Google will redirect the user
+  //   back to this application at /auth/google/callback
+  app.route('/auth/google')
+    .get(passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+  // GET /auth/google/callback
+  //   Use passport.authenticate() as route middleware to authenticate the
+  //   request.  If authentication fails, the user will be redirected back to the
+  //   login page.  Otherwise, the primary route function function will be called,
+  //   which, in this example, will redirect the user to the home page.
+  app.route('/auth/google/callback')
+    .get(function (req, res, next) {
+      passport.authenticate('google', function (err, user, info) {
+        if (err) { return next(err); }
+        if (!user) {
+          res.status(400).json({ success: false, message: info.message });
+          return;
+        }
+
+        // This function calls passport.serializeUser() automatically.
+        req.logIn(user, function (err) {
+          if (err) {
+            return next(err);
+          } else {
+            // create the user token
+            var token = jwt.sign(user, configAuth.secret, {
+              expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+            });
+            // return response with TWT Token
+            res.status(200).json({ success: true, token: 'JWT ' + token });
+          }
+        });
+      })(req, res, next);
+    });
+
+
+  function checkUserTokenValidaton(req, res, callback) {
+
+  }
+
+
+  // Update user
+  app.route('/api/updateUser')
+    .put(
+    passport.authenticate('jwt', { session: false }), function (req, res) {
+      console.log("dddd")
+      //  console.log(req);
+      //res.send("Authorized");
+    },
+    users.updateUser);
+
+
+  // route for logging out
+  // app.get('/logout', function(req, res) {
+  //     req.logout();
+  //     res.redirect('/');
+  // });
+
+  // Change password of the user
+  app.route('/api/changePassword')
+    .put(passport.authenticate('jwt', { session: false }), function (req, res, next) {
+      next()// user is authorized.
+    }, users.changePassword);
+
+  // // Change password of the user
+  // app.route('/api/checkEmailExistance')
+  //   .put(passport.authenticate('jwt', { session: false }), function (req, res, next) {
+  //     next()// user is authorized.
+  //   }, users.changePassword);
+
+
+
+
+  // Protect dashboard route with JWT
+  app.route('/auth/dashboard')
+    .get(passport.authenticate('jwt', { session: false }), function (req, res) {
+      //  console.log(req);
+      res.send("Authorized");
+    });
+
+}
+module.exports = appRouter;

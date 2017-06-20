@@ -1,0 +1,41 @@
+'use strict'
+
+var mongoose = require('mongoose'),
+    Schema = mongoose.Schema;
+
+var QualificationsSchema = new Schema({
+
+    title: {
+        type: String,
+        required: true
+    },
+
+    decscription: {
+        type: String,
+        required: true
+    },
+
+    answersList: {
+        type: Array,
+        required: true
+    },
+
+    createdAt: {
+        type: Date
+    },
+
+    updatedAt: {
+        type: Date
+    }
+
+});
+
+QualificationsSchema.pre('save', function (next) {
+    var now = new Date();
+    this.updateAt = now;
+    if (!this.createdAt) {
+        this.createdAt = now;
+    }
+    next();
+});
+mongoose.model('Qualifications', QualificationsSchema);

@@ -1,0 +1,29 @@
+/*
+ * File : config/auth.js
+ */
+'use strict';
+
+var bunyan = require('bunyan');
+
+var log = bunyan.createLogger({
+    name: 'GigUp',
+    streams: [
+        {
+            level: 'info',
+            path: './info_logs/info_log.log',
+            type: 'rotating-file',
+            period: '1w',	// 1h = 1hour, 1d = 1day, 1w = 1week, 1m = 1month
+            count: 10
+        },
+        {
+            level: 'error',
+            path: './error_logs/error_log.log',
+            type: 'rotating-file',
+            period: '1w',   // 1h = 1hour, 1d = 1day, 1w = 1week, 1m = 1month
+            count: 10
+        }
+    ],
+});
+
+// Expose our auth directly to our application using module.exports
+module.exports = { logger: log };

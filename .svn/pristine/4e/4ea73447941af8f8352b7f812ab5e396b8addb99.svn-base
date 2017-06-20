@@ -1,0 +1,116 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/qualifications.js');
+var Qualifications = mongoose.model('Qualifications');
+var Promise = require('bluebird');
+const elasticsearch = require('elasticsearch');
+var fs = require('file-system');
+var faker = require('faker');
+
+
+const esClient = new elasticsearch.Client({
+  host: '172.20.20.157:3000',
+  log: 'error'
+});
+
+
+function bulkIndex(index, type, data) {
+  let bulkBody = [];
+  data.forEach(item => {
+    bulkBody.push({
+      index: {
+        _index: index,
+        _type: type,
+        _id: item.id
+      }
+    });
+
+    bulkBody.push(item);
+  });
+
+  esClient.bulk({body: bulkBody})
+  .then(response => {
+    console.log('here');
+    let errorCount = 0;
+    response.items.forEach(item => {
+      if (item.index && item.index.error) {
+        console.log(++errorCount, item.index.error);
+      }
+    });
+    console.log(
+      `Successfully indexed ${data.length - errorCount}
+       out of ${data.length} items`
+    );
+  })
+  .catch(err=>{
+    console.log('EEEERRRRRRRRRRRRRRRRRRROOOOOOOOOOOOOO')
+    console.log(err)
+  });
+};
+
+
+
+
+
+
+module.exports.getQualifications = function (req, res) {
+
+console.log("commig...")
+// Write random data to files
+
+// var fileData = [];
+// for(var i=0; i<500; i++){
+//   fileData.push(
+//                 {
+//                 name : faker.name.findName(),
+//                 email : faker.internet.email(),
+//                 about : faker.lorem.sentence(),
+//                 address : faker.address.streetAddress(),
+//                 favorateColor : faker.commerce.color(),
+//               })
+// }
+// fs.writeFileSync('./helpers/users.json', JSON.stringify(fileData), 'utf-8', function(err, data) {
+//   console.log(err)
+//   console.log(data)
+// 	if (err){
+//     console.log(err)
+//   } else{
+// 	  console.log('Done!')
+//   }
+// })
+
+
+  const articlesRaw = JSON.parse(fs.readFileSync('./helpers/users.json', 'utf8'));
+  bulkIndex('library', 'article', articlesRaw);
+
+
+	// var arrlist = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+
+	// var ansList = [2,
+	// 	['a1', 'a2', 'a5'],
+	// 	['a6', 'a7']]
+
+	// var match1 = ansList[1].reduce(function (acc, val) {
+	// 	return acc + (arrlist.indexOf(val) != -1 ? 1 : 0);
+	// }, 0)
+
+	// var match2 = ansList[2].reduce(function (acc, val) {
+	// 	return acc + (arrlist.indexOf(val) != -1 ? 1 : 0);
+	// }, 0)
+
+	// if (match1 >= ansList[0] && match2 == ansList[2].length) {
+	// 	console.log("match")
+	// } else {
+	// 	console.log("not match")
+	// }
+
+	// On each hit(on answer) find matched qualification using anslist[2]
+	// then filter again matched qualification
+
+
+	res.status(200).json({});
+
+}

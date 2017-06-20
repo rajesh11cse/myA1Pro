@@ -1,0 +1,31 @@
+'use strict';
+// config/auth.js
+
+// expose our config directly to our application using module.exports
+module.exports = {
+
+    secret: 'thisismysecretkey',
+
+    // Jwt token expiry time in hours.
+    tokenExpiresIn: '1h',
+
+
+    'facebookAuth': {
+        'clientID': 677629629096400,//'your-secret-clientID-here', // your App ID
+        'clientSecret': '4f4656d0201754755400baac762e05ba',//'your-client-secret-here', // your App Secret
+        'callbackURL': 'http://localhost:3000/auth/facebook/callback',
+        'profileFields': ['id', 'displayName', 'gender',  'emails', 'name', 'photos'] //This
+    },
+
+    'twitterAuth': {
+        'consumerKey': 'your-consumer-key-here',
+        'consumerSecret': 'your-client-secret-here',
+        'callbackURL': 'http://localhost:8080/auth/twitter/callback'
+    },
+
+    'googleAuth': {
+        'clientID': 'your-secret-clientID-here',
+        'clientSecret': 'your-client-secret-here',
+        'callbackURL': 'http://localhost:8080/auth/google/callback'
+    }
+}

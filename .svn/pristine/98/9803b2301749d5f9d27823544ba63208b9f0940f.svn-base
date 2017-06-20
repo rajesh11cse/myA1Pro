@@ -1,0 +1,72 @@
+/*
+ * File : models/questionnaire.js
+ */
+
+'use strict';
+
+var mongoose = require('mongoose'),
+  Schema = mongoose.Schema;
+
+var QuestionnaireSchema = new Schema({
+  id: {
+    type: String,
+    unique : true
+  },
+
+  question: {
+    type: String,
+  },
+
+  detail: {
+    type: String,
+  },
+
+  intro : {
+    type : String
+  },
+
+  type: { 
+    type: String,
+  },
+
+  answers: {
+    type: Array
+  },
+
+  scope: {
+    type: Array
+  },
+
+  related: {
+    type: Array
+  },
+
+  conditional: {
+    type: Boolean
+  },
+
+  subquestions: {
+    type: Array
+  },
+  
+  createdAt: {
+    type: Date
+  },
+
+  updatedAt: {
+    type: Date
+  }
+
+});
+
+QuestionnaireSchema.pre('save', function (next) {
+  var now = new Date();
+
+  this.updateAt = now;
+  if (!this.createdAt) {
+    this.createdAt = now;
+  }
+    next();
+});
+
+mongoose.model('Questionnaire', QuestionnaireSchema);

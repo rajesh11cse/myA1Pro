@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html ng-app="MyApp">
+    <head>
+    </head>
+        <div ng-controller="myCtrl">
+            <a href="/auth/facebook">facebook</a>
+            <h1>Welcome</h1>
+        </div>
+    </body>
+</html>

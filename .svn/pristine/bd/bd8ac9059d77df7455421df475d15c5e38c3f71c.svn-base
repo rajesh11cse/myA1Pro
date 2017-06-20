@@ -1,0 +1,45 @@
+var express = require("express"),
+    bodyParser = require('body-parser'),
+    expressValidator = require('express-validator'),
+    mongoose = require('mongoose'),
+    config = require('./config/development.js'),
+    passport = require('passport'),
+    app = express(),
+    flash = require('req-flash');
+
+// connect to Mongo when the app initializes
+mongoose.connect(config.db); // connect to mongo database
+
+// parse application/json
+app.use(bodyParser.json())
+
+// validate the corresponding request object 
+app.use(expressValidator({
+    customValidators: {
+        isArray: function (value) {
+            return Array.isArray(value);
+        },
+        isString: function (value) {
+            return typeof value === 'string'
+        }
+    }
+}));
+
+var routes = require("./routes.js")(app);
+
+
+app.use(passport.initialize());// middleware
+app.use(passport.session()); // middleware
+
+
+// Bring in defined Passport Strategy
+require('./middlewares/passport.js')(passport);
+
+// load the files which are in the controllers and models directory
+app.use('/server', express.static(__dirname + '/controllers'));
+app.use('/server', express.static(__dirname + '/models'));
+
+
+var server = app.listen(3000, function () {
+    console.log('Server listening at port : %s', server.address().port);
+});

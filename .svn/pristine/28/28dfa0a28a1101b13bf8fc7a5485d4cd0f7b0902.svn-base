@@ -1,0 +1,291 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/users.js');
+var User = mongoose.model('User'),
+  jwt = require('jsonwebtoken'),
+  configAuth = require('../config/auth'),
+  bcrypt = require('bcrypt'),
+  nodemailer = require('nodemailer'),
+  xoauth2 = require('xoauth2'),
+  smtpTransport = require('nodemailer-smtp-transport');
+const bunyan = require('bunyan');
+
+// Register a user
+module.exports.userRegistration = function (req, res) {
+  /* assert can be used to check on all 3 types of params 
+   * req.body, req.params(URL params) and req.query(GET params). 
+   * For more : https://www.npmjs.com/package/express-validator */
+  req.assert('firstName', 'First name is required.').notEmpty();
+  req.assert('lastName', 'Last name is required.').notEmpty();
+  req.assert('email', 'Email address is required.').notEmpty();
+  req.assert('email', 'Email address is not valid.').isEmail();
+  req.assert('phone', 'Phone number is required.').notEmpty();
+  req.assert('phone', 'Phone number is not valid.').isInt().len(10);// minimum 10 digits
+  req.assert('password', 'Password is required.').notEmpty();
+  req.assert('password', 'Password must be between 8-20 characters long.').len(8, 20);
+  req.assert('confirmPassword', 'Confirm password is required.').notEmpty();
+  req.assert('confirmPassword', 'Passwords do not match.').equals(req.body.password);
+
+  var errors = req.validationErrors();
+  if (errors) {
+    res.send(errors[0].msg); return;
+  }
+
+  // Attempt to update the user
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Server error.' });
+    }
+    if (user) {
+      return res.status(400).json({ success: false, message: 'That email address already exists.' });
+    }
+    var newUser = new User(req.body);
+    userName: req.body.email.substring(0, req.body.email.indexOf("@")),
+
+      // Attempt to save the user
+      newUser.save(function (err, data) {
+        if (err) {
+          console.log("================================================")
+          console.log(err)
+          // Check for Validation error in  err object
+          if (err.name == 'ValidationError') {
+            return res.status(400).json({ success: false, message: err.message });
+          }
+          // Check for Mongo  error in  err object
+          if (err.name == 'MongoError') {
+            return res.status(400).json({ success: false, message: 'That email address already exists.' });
+          }
+        } else {
+          res.status(200).json({ success: true, message: 'Successfully created new user.' });
+        }
+      });
+
+  });
+
+}
+
+// Update a user
+module.exports.updateUser = function (req, res) {
+  // update query
+  var query = {
+    $set: {
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      nickName: req.body.nickName,
+      phone: req.body.phone,
+      dateOfBirth: req.body.dateOfBirth,
+      city: req.body.city,
+      state: req.body.state,
+      zipCode: req.body.zipCode,
+      licenceNo: req.body.licenceNo,
+      licenceState: req.body.licenceState,
+      licenceExpDate: req.body.licenceExpDate
+    }
+  }
+  // Attempt to update the user
+  User.findByIdAndUpdate({ _id: req.body.id }, query, function (err) {
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Server error.' });
+    }
+    res.status(200).json({ success: true, message: 'Successfully updated user.' });
+  });
+}
+
+
+// Get user details
+module.exports.getUserDetails = function (req, res) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    } else {
+      User.findOne({ _id: decoded.id }, function (err, user) {
+        if (err) throw err;
+        if (!user) {
+          //  If no user found in database then revert back with error message
+          res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+        } else {
+          // create the user token
+          var token = jwt.sign(user, configAuth.secret, {
+            expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+          });
+          res.status(200).json({ success: true, data: user, token: 'JWT ' + token });
+        }
+      });
+    }
+  });
+}
+
+
+
+// checkEmailExistance
+module.exports.checkEmailExistance = function (req, res) {
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err) throw err;
+    if (!user) {
+      //  If no user found in database then revert back with error message
+      res.status(400).json({ success: false, message: 'Email address does not exist in database' });
+    } else {
+      // create the user token
+      var token = jwt.sign({ id: user._id, email: user.email }, configAuth.secret, {
+        expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+      });
+
+      //res.status(200).json({ success: true, data: user});
+      res.status(200).json({ success: true, data: user, token: 'JWT ' + token });
+    }
+  });
+}
+
+
+
+// Change password function
+module.exports.changePassword = function (req, res, next) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    } else {
+      User.findOne({
+        _id: decoded.id
+      }, function (err, user) {
+        if (err) throw err;
+        if (!user) {
+          //  If no user found in database then revert back with error message
+          res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+        }
+        if (!user.validPassword(req.body.oldPassword)) {
+          return res.status(500).json({ success: false, message: 'Old password is incorrect.' });
+        } else {
+          bcrypt.genSalt(10, function (err, salt) {
+            if (err) {
+              return res.status(500).json({ success: false, message: 'Server error.' });
+            }
+            bcrypt.hash(req.body.newPassword, salt, function (err, hash) {
+              if (err) {
+                return res.status(500).json({ success: false, message: 'Server error.' });
+              }
+
+              var query = { $set: { password: hash } }
+              User.findByIdAndUpdate({ _id: decoded.id }, query, function (err) {
+                if (err) {
+                  return res.status(500).json({ success: false, message: 'Server error.' });
+                }
+                res.status(200).json({ success: true, message: 'Password has been updated successfully.' });
+              });
+
+            });
+          });
+
+        }
+      });
+    }
+  });
+}
+
+
+
+// Forgot password function
+module.exports.forgotPassword = function (req, res, next) {
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err) throw err;
+    if (!user) {
+      //  If no user found in database then revert back with error message
+      res.status(400).json({ success: false, message: 'Email address not found.' });
+    } else {
+      console.log("comming")
+      // create the user token
+      var token = jwt.sign({ id: user._id, email: user.email }, configAuth.secret, {
+        expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+      });
+
+      // create reusable transporter object using the default SMTP transport
+      let transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: 'rajeshkumar11cse@gmail.com',
+          pass: 'rajsikar'
+        }
+      });
+       //  node.getElementById("link").setAttribute("href",token)
+      // setup email data with unicode symbols
+      let mailOptions = {
+        from: 'GigUp" rajeshkumar11cse@gmail.com', // sender address
+        to: 'nrbdrm@gmail.com', // list of receivers user.email
+        subject: 'Password Reset from GigUp', // Subject line
+        //text: 'Hello world ', // plain text body
+        html: "<p>Hello,</p>" +
+        "<p>We were asked to reset your GigUp account password. Follow the instructions below if this request comes from you. Ignore the E-Mail if the request to reset your password does not come from you. Don't worry, your account is safe.Click the following link to set a new password.</p>" +
+        "<p><a id='link'>"+token+"</a></p>" +
+        "<p>If clicking the link doesn't work you can copy the link into your browser window or type it there directly.</p>" +
+        "<p>Regards,</p>" +
+        "<p>Your GigUp Team</p>"
+      };
+
+      // send mail with defined transport object
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          return console.log(error);
+          return res.status(500).json({ success: false, message: 'Server error' });
+        }
+        console.log('Message %s sent: %s', info.messageId, info.response);
+        return res.status(200).json({ success: true, message: 'Password reset instructions have been mailed to you.' });
+      });
+    }
+  });
+};
+
+
+// // User login
+// module.exports.userLogin = function (req, res) {
+//   req.assert('email', 'Email address is required').notEmpty();
+//   req.assert('email', 'Email address is not valid').isEmail();
+//   req.assert('password', 'Password is required').notEmpty();
+
+//   var errors = req.validationErrors();
+//   if (errors) {
+//     res.send(errors[0].msg); return;
+//   }
+//   // User.findOne({
+//   //   email: req.body.email
+//   // }, function (err, user) {
+//   //   console.log(user)
+//   //   if (err) throw err;
+//   //   if (!user) {
+//   //     //  If no user found in database for perticular email or username
+//   //     res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+//   //   } else {
+//   //     // Create token if the password matched and no error was thrown
+//   //     var token = jwt.sign(user, config.secret, {
+//   //       expiresIn: config.tokenExpiresIn
+//   //     });
+//   //     // return with response with TWT Token
+//   //     res.status(200).json({ success: true, token: 'JWT ' + token });
+//   //   }
+//   // });
+
+//   //  User.findOne({
+//   //   email: req.body.email
+//   // }, function (err, user) {
+//   //   console.log(user)
+//   //   if (err) throw err;
+//   //   if (!user) {
+//   //     //  If no user found in database for perticular email or username
+//   //     res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+//   //   }
+//   //   if (!user.validPassword(password)){
+//   //     // Create token if the password matched and no error was thrown
+//   //     var token = jwt.sign(user, config.secret, {
+//   //       expiresIn: config.tokenExpiresIn
+//   //     });
+//   //     // return with response with TWT Token
+//   //     res.status(200).json({ success: true, token: 'JWT ' + token });
+//   //   }
+//   // });
+// }
+

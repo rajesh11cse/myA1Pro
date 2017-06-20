@@ -1,0 +1,37 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/qualifications.js');
+var Qualifications = mongoose.model('Qualifications');
+var Promise = require('bluebird');
+var fs = require('file-system');
+
+module.exports.getQualifications = function (req, res) {
+
+	// var arrlist = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+
+	// var ansList = [2,
+	// 	['a1', 'a2', 'a5'],
+	// 	['a6', 'a7']]
+
+	// var match1 = ansList[1].reduce(function (acc, val) {
+	// 	return acc + (arrlist.indexOf(val) != -1 ? 1 : 0);
+	// }, 0)
+
+	// var match2 = ansList[2].reduce(function (acc, val) {
+	// 	return acc + (arrlist.indexOf(val) != -1 ? 1 : 0);
+	// }, 0)
+
+	// if (match1 >= ansList[0] && match2 == ansList[2].length) {
+	// 	console.log("match")
+	// } else {
+	// 	console.log("not match")
+	// }
+
+	// On each hit(on answer) find matched qualification using anslist[2]
+	// then filter again matched qualification
+
+	res.status(200).json({});
+}

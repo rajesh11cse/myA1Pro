@@ -1,0 +1,96 @@
+var path = require('path'),
+  passport = require('passport'),
+  questions = require('./controllers/questions'),
+  qualifications = require('./controllers/qualifications');
+var mongoose = require('mongoose');
+var config = require('./config/development.js');
+var jwt = require('jsonwebtoken');
+require('./models/users.js');
+var User = mongoose.model('User');
+
+var appRouter = function (app) {
+  app.get("/", function (req, res) {
+    res.sendFile(path.join(__dirname, '', './views/index.html'));
+  });
+
+  // API login
+  // app.route("/api/login")
+  //     .post(passport.authenticate('local'), users.login)
+
+  // API to create question
+  app.route("/api/createQuestion")
+    .post(questions.createQuestion)
+
+  // API to get questions
+  app.route("/api/getQuestions")
+    .get(questions.getQuestions)
+
+  // API to get qulifications
+  app.route("/api/getQualifications")
+    .get(qualifications.getQualifications)
+
+
+
+  // Register new users
+  app.route('/api/register')
+    .post(function (req, res) {
+      if (!req.body.email || !req.body.password) {
+        res.status(400).json({ success: false, message: 'Please enter email and password.' });
+      } else {
+        var newUser = new User({
+          email: req.body.email,
+          password: req.body.password
+         // phone: req.body.phone,
+         // firstName: req.body.firstName,
+        });
+
+        // Attempt to save the user
+        newUser.save(function (err) {
+         // console.log("err")
+        //  console.log(err)
+          if (err) {
+            return res.status(400).json({ success: false, message: 'That email address already exists.' });
+          }
+          res.status(200).json({ success: true, message: 'Successfully created new user.' });
+        });
+      }
+    });
+
+  // Authenticate the user and get a JSON Web Token to include in the header of future requests.
+  app.route('/api/authenticate')
+    .post(function (req, res) {
+     console.log(req.body)
+      User.findOne({
+        email: req.body.email
+      }, function (err, user) {
+        if (err) throw err;
+
+        if (!user) {
+          res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+        } else {
+          // Check if password matches
+          user.comparePassword(req.body.password, function (err, isMatch) {
+            if (isMatch && !err) {
+            //  console.log(user)
+              // Create token if the password matched and no error was thrown
+              var token = jwt.sign(user, config.secret, {
+                expiresIn: config.tokenExpiresIn // in seconds
+              });
+              res.status(200).json({ success: true, token: 'JWT ' + token });
+            } else {
+              res.status(400).json({ success: false, message: 'Authentication failed. Passwords did not match.' });
+            }
+          });
+        }
+      });
+    });
+
+  // Protect dashboard route with JWT
+  app.route('/api/dashboard')
+    .get(passport.authenticate('jwt', { session: false }), function (req, res) {
+      res.send("Authorized");
+    });
+
+
+}
+module.exports = appRouter;

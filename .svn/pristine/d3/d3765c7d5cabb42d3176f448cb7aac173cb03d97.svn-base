@@ -1,0 +1,42 @@
+var path = require('path'),
+
+  questions = require('./controllers/questions'),
+  qualifications = require('./controllers/qualifications'),
+  users = require('./controllers/users'),
+  passport = require('passport'),
+  jwt = require('jsonwebtoken');
+
+var appRouter = function (app) {
+  // Default API
+  app.get("/", function (req, res) {
+    res.sendFile(path.join(__dirname, '', './views/index.html'));
+  });
+
+  // set up the RESTful API, handler methods are defined in api.js
+  // API to create question
+  app.route("/api/createQuestion")
+    .post(questions.createQuestion)
+
+  // API to get questions
+  app.route("/api/getQuestions")
+    .get(questions.getQuestions)
+
+  // API to get qulifications
+  app.route("/api/getQualifications")
+    .get(qualifications.getQualifications)
+
+  // Register new users
+  app.route('/api/register')
+    .post(users.userRegistration);
+
+  // Authenticate the user and create a JSON Web Token for future convenince.
+  app.route('/api/authenticate')
+    .post(users.userLogin);
+
+  // Protect dashboard route with JWT
+  app.route('/api/dashboard')
+    .get(passport.authenticate('jwt', { session: false }), function (req, res) {
+      res.send("Authorized");
+    });
+}
+module.exports = appRouter;

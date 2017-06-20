@@ -1,0 +1,504 @@
+'use strict'
+
+/**
+ * Module dependencies.
+ */
+
+var mongoose = require('mongoose');
+require('../models/users.js');
+var User = mongoose.model('User');
+require('../models/tokenBlacklist.js');
+var TokenBlacklist = mongoose.model('TokenBlacklist');
+require('../models/platforms.js');
+
+var Platform = mongoose.model('Platform'),
+  jwt = require('jsonwebtoken'),
+  configAuth = require('../config/auth'),
+  bcrypt = require('bcrypt'),
+  nodemailer = require('nodemailer'),
+  myPromise = require('bluebird');
+
+/* 
+   ===================== Register user function =====================
+*/
+module.exports.userRegistration = function (req, res) {
+  /* assert can be used to check on all 3 types of params 
+   * req.body, req.params(URL params) and req.query(GET params). 
+   * For more : https://www.npmjs.com/package/express-validator */
+  req.assert('firstName', 'First name is required.').notEmpty();
+  req.assert('lastName', 'Last name is required.').notEmpty();
+  req.assert('email', 'Email address is required.').notEmpty();
+  req.assert('email', 'Email address is not valid.').isEmail();
+  req.assert('phone', 'Phone number is required.').notEmpty();
+  req.assert('phone', 'Phone number is not valid.').isInt().len(10);// minimum 10 digits
+  req.assert('password', 'Password is required.').notEmpty();
+  req.assert('password', 'Password must be between 8-20 characters long.').len(8, 20);
+  req.assert('confirmPassword', 'Confirm password is required.').notEmpty();
+  req.assert('confirmPassword', 'Passwords do not match.').equals(req.body.password);
+
+  var errors = req.validationErrors();
+  if (errors) {
+    res.send(errors[0].msg); return;
+  }
+
+  // Attempt to update the user
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Server error.' });
+    }
+    if (user) {
+      return res.status(400).json({ success: false, message: 'That email address already exists.' });
+    }
+    var newUser = new User(req.body);
+    userName: req.body.email.substring(0, req.body.email.indexOf("@")),
+      // Attempt to save the user
+      newUser.save(function (err, data) {
+        if (err) {
+          // Check for Validation error in  err object
+          if (err.name == 'ValidationError') {
+            return res.status(400).json({ success: false, message: err.message });
+          }
+          // Check for Mongo  error in  err object
+          if (err.name == 'MongoError') {
+            return res.status(400).json({ success: false, message: 'That email address already exists.' });
+          }
+        } else {
+          res.status(200).json({ success: true, message: 'Successfully created new user.' });
+        }
+      });
+  });
+}
+
+
+/* 
+   ===================== Update a user function =====================
+*/
+module.exports.updateUser = function (req, res) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    }
+    // update query
+    var query = {
+      $set: {
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        nickName: req.body.nickName,
+        phone: req.body.phone,
+        dateOfBirth: req.body.dateOfBirth,
+        addressLine1: req.body.addressLine1,
+        addressLine2: req.body.addressLine2,
+        city: req.body.city,
+        state: req.body.state,
+        zipCode: req.body.zipCode,
+        licenceNo: req.body.licenceNo,
+        licenceState: req.body.licenceState,
+        licenceExpDate: req.body.licenceExpDate,
+      }
+    }
+    // Attempt to update the user
+    User.findByIdAndUpdate({ _id: decoded.id }, query, function (err, data) {
+      if (err) {
+        // Check for Validation error in  err object
+        if (err.name == 'ValidationError') {
+          return res.status(400).json({ success: false, message: err.message });
+        }
+        // Check for Mongo  error in  err object
+        if (err.name == 'MongoError') {
+          return res.status(400).json({ success: false, message: err.message });
+        }
+      }
+      res.status(200).json({ success: true, message: 'Updated successfully.' });
+    });
+  });
+}
+
+
+/* 
+   ===================== Get user details function =====================
+*/
+module.exports.getUserDetails = function (req, res) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    } else {
+      User.findOne({ _id: decoded.id }, function (err, user) {
+        if (err) throw err;
+        if (!user) {
+          //  If no user found in database then revert back with error message
+          res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+        } else {
+          // create the user token
+          var token = jwt.sign(user, configAuth.secret, {
+            expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+          });
+          res.status(200).json({ success: true, data: user, token: 'JWT ' + token });
+        }
+      });
+    }
+  });
+}
+
+
+/* 
+   ===================== Check Email existance in database function =====================
+*/
+module.exports.checkEmailExistance = function (req, res) {
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err) throw err;
+    if (!user) {
+      //  If no user found in database then revert back with error message
+      res.status(400).json({ success: false, message: 'Email address does not exist in database' });
+    } else {
+      // create the user token
+      var token = jwt.sign({ id: user._id, email: user.email }, configAuth.secret, {
+        expiresIn: configAuth.tokenExpiresIn// Expiry date of user token
+      });
+
+      //res.status(200).json({ success: true, data: user});
+      res.status(200).json({ success: true, data: user, token: 'JWT ' + token });
+    }
+  });
+}
+
+
+/* 
+   ===================== Change password function =====================
+*/
+module.exports.changePassword = function (req, res, next) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    } else {
+      User.findOne({
+        _id: decoded.id
+      }, function (err, user) {
+        if (err) throw err;
+        if (!user) {
+          //  If no user found in database then revert back with error message
+          res.status(400).json({ success: false, message: 'Authentication failed. User not found.' });
+        }
+        if (!user.validPassword(req.body.oldPassword)) {
+          return res.status(500).json({ success: false, message: 'Old password is incorrect.' });
+        } else {
+          bcrypt.genSalt(10, function (err, salt) {
+            if (err) {
+              return res.status(500).json({ success: false, message: 'Server error.' });
+            }
+            bcrypt.hash(req.body.newPassword, salt, function (err, hash) {
+              if (err) {
+                return res.status(500).json({ success: false, message: 'Server error.' });
+              }
+
+              var query = { $set: { password: hash } }
+              User.findByIdAndUpdate({ _id: decoded.id }, query, function (err) {
+                if (err) {
+                  return res.status(500).json({ success: false, message: 'Server error.' });
+                }
+                res.status(200).json({ success: true, message: 'Password has been changed successfully.' });
+              });
+
+            });
+          });
+
+        }
+      });
+    }
+  });
+}
+
+
+/*
+    Find the user in database by email id,
+    if user exists in database then send a mail to user
+    else reject the request
+*/
+function findUserByEnmailId(req) {
+  return new Promise(function (resolve, reject) {
+    User.findOne({ email: req.body.email }, function (err, user) {
+      if (err) reject(err);
+      if (!user) {
+        reject('Email address not found.');
+      } else {
+        resolve(user);
+      }
+    });
+  });
+}
+
+/*
+    Send an email to user 
+*/
+function sendMailToUser(user) {
+  return new Promise(function (resolve, reject) {
+    // create the user token
+    var token = jwt.sign({ id: user._id, email: user.email }, configAuth.secret, {
+      expiresIn: 2000//configAuth.tokenExpiresIn// Expiry date of user token
+    });
+    // create reusable transporter object using the default SMTP transport
+    let transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: configAuth.auth.user,
+        pass: configAuth.auth.pass
+      }
+    });
+
+    // setup email data with unicode symbols
+    let mailOptions = {
+      from: configAuth.defaultFromAddress, // sender address
+      to: user.email,// list of receivers user.email 'nrbdrm@gmail.com'
+      subject: configAuth.subject, // Subject line
+      html: "<p>Hello,</p>" +
+      "<p>We have received a request to reset your GigUp account password.</p>" +
+      '<p><a href="' + configAuth.resetPasswordUrl + '' + token + '">Click here</a> to reset your password</p>' +
+      "<p>Regards,</p>" +
+      "<p>Your GigUp Team</p>"
+    };
+
+    // send mail with defined transport object
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        reject(error);
+      }
+      console.log('Message %s sent: %s', info.messageId, info.response);
+      resolve('Password reset instructions have been mailed to you.');
+    });
+  });
+};
+
+
+/*
+    Verify the token  that is expired on not,
+    if token is expired then reject promise.
+*/
+function verifyToken(req) {
+  return new Promise(function (resolve, reject) {
+    var token = req.headers.authorization
+    jwt.verify(token, configAuth.secret, function (err, decoded) {
+      if (decoded) {
+        // Curent time in seconds
+        var currentTime = Math.round(new Date().getTime() / 1000);
+        // Difference b/w current time and expiration time(decoded.iat)
+        var ExpDiff = currentTime - decoded.iat;
+        // This is expiry time which is mentioned in auth.js
+        var ExpTime = (configAuth.token_Expires_For_Rest_Password / 1000) * 60;
+        if (ExpDiff > ExpTime) {
+          reject('Token is expired.');
+        } else {
+          resolve(decoded);
+        }
+      } else {
+        reject('Invalid user token.');
+      }
+    });
+  });
+}
+
+/*
+    If token is not expired then check the token is 
+    already used or not if yes then reject the promise,
+    Note :  Here we find out the token in blacklist(collection)
+*/
+function findTokenInBlacklist(decoded, req) {
+  return new Promise(function (resolve, reject) {
+    var token = req.headers.authorization;
+    TokenBlacklist.findOne({ token: token }, function (err, data) {
+      if (err) reject(err);
+      if (data) {
+        reject('This token is already used.');
+      } else {
+        resolve(decoded);
+      }
+    });
+  });
+}
+
+
+/*
+    Create bcrypt hashed password
+*/
+function createBcryptHashedPassword(decoded, req) {
+  return new Promise(function (resolve, reject) {
+    bcrypt.genSalt(10, function (err, salt) {
+      if (err) {
+        reject(err);
+      }
+      bcrypt.hash(req.body.newPassword, salt, function (err, hash) {
+        if (err) {
+          reject(err);
+        } else {
+          decoded['password'] = req.body.newPassword;
+          decoded['hash'] = hash;
+          resolve(decoded, hash);
+        }
+      });
+    });
+  });
+}
+
+
+/*
+    Complare old passwords with current password, If 
+    old password is matched with it then user is not allowed
+    to reset password
+
+    Reset password with hashed password only
+    using users _id  which comes from decoded user token.
+*/
+function resetPassword(decoded) {
+  return new Promise(function (resolve, reject) {
+    User.findOne({ _id: decoded.id }, function (err, user) {
+      if (err) {
+        reject(err);
+      }
+      // checking if password is valid or matching to old password
+      if (user.validPassword(decoded.password)) {
+        reject("Old passwords can't be reset.");
+      } else {
+        var query = { $set: { password: decoded.hash } }
+        User.findByIdAndUpdate({ _id: decoded.id }, query, function (err) {
+          if (err) {
+            reject(err);
+          }
+          resolve(user);
+        });
+      }
+    });
+  });
+}
+
+
+
+/*
+    Save or Insert the current token in database/Blacklist 
+    so that we can verify that this token could not be used next time.
+*/
+function saveTokenInBlacklist(req) {
+  return new Promise(function (resolve, reject) {
+    var token = req.headers.authorization
+    var tokenBlacklist = new TokenBlacklist();
+    tokenBlacklist.token = token;
+    tokenBlacklist.save(function (err, data) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve('Password has been updated successfully.');
+      }
+    });
+  });
+}
+/* 
+   ===================== Forgot password function =====================
+*/
+module.exports.forgotPassword = function (req, res, next) {
+  findUserByEnmailId(req)
+    .then(function (userData) {
+      return sendMailToUser(userData);
+    })
+    .then(function (data) {
+      return res.status(200).json({ result: "Success", message: data });
+    })
+    .catch(function (err) {
+      return res.status(400).json({ result: "Error", message: err });
+    });
+};
+
+
+
+/* 
+   ===================== Reset password function =====================
+*/
+module.exports.resetPassword = function (req, res, next) {
+  req.assert('newPassword', 'Password is required.').notEmpty();
+
+  var errors = req.validationErrors();
+  if (errors) {
+    res.send(errors[0].msg); return;
+  }
+
+  verifyToken(req)
+    .then(function (decoded) {
+      return findTokenInBlacklist(decoded, req);
+    })
+    .then(function (decoded) {
+      return createBcryptHashedPassword(decoded, req);
+    })
+    .then(function (decoded) {
+      return resetPassword(decoded);
+    })
+    .then(function (decoded) {
+      return saveTokenInBlacklist(req);
+    })
+    .then(function (data) {
+      return res.status(200).json({ result: "Success", message: data });
+    })
+    .catch(function (err) {
+      return res.status(400).json({ result: "Error", message: err });
+    });
+}
+
+/* 
+   ===================== Update platform in user profile function =====================
+*/
+module.exports.updateUserMatchedPlatforms = function (req, res) {
+  req.assert('email', 'Email is required.').notEmpty();
+
+  var errors = req.validationErrors();
+  if (errors) {
+    res.send(errors[0].msg); return;
+  }
+
+  // update query
+  var query = {
+    $set: {
+      matchedPFs: req.body.matchedPFs
+    }
+  }
+  // find the user using email address.
+  User.findOne({ email: req.body.email }, function (err, user) {
+    if (err || !user) {
+      return res.status(400).json({ success: false, message: 'User not found.' });
+    }
+    User.findByIdAndUpdate({ _id: user._id }, query, function (err, user) {
+      if (err) {
+        return res.status(400).json({ success: false, message: 'Server error' });
+      }
+      res.status(200).json({ success: true, message: 'Successfully updated.' });
+    });
+  });
+}
+
+
+/* 
+   ===================== Get matched plateform function =====================
+*/
+module.exports.getMatchedPlatforms = function (req, res) {
+  var token = req.headers.authorization
+  jwt.verify(token.substring(4), configAuth.secret, function (err, decoded) {
+    // error if token is invalid
+    if (err) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or expired.' });
+    } else {
+      // find the user using email address.
+      User.findOne({ _id: decoded.id }, function (err, user) {
+        if (err || !user) {
+          return res.status(400).json({ success: false, message: 'User not found.' });
+        }
+        // find all matched platforms
+        Platform.find({ pID: { "$in": user.matchedPFs } }, function (err, data) {
+          if (err || !data) {
+            return res.status(400).json({ success: false, message: 'No platform found.' });
+          }
+          res.status(200).json({ success: true, data: data });
+        });
+      });
+    }
+  });
+}

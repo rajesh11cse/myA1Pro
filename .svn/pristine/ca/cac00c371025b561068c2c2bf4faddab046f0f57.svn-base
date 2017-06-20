@@ -1,0 +1,23 @@
+'use strict'
+/**
+ * Module dependencies.
+ */
+var mongoose = require('mongoose');
+require('../models/qualifications.js');
+var Qualifications = mongoose.model('Qualifications');
+var Promise = require('bluebird');
+const elasticsearch = require('elasticsearch');
+var fs = require('file-system');
+var faker = require('faker');
+
+
+
+
+module.exports.login = function (req, res) {
+
+    console.log("commig...")
+
+
+	res.status(200).json({});
+
+}
